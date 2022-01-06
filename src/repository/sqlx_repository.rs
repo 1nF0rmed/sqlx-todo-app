@@ -48,7 +48,6 @@ impl SqlxTaskRepository<'_> {
 
     pub async fn complete_task(&self, id: String) -> Result<Task> {
         let mut tx = self.pool.begin().await?;
-        let task_id = Uuid::new_v4().to_string();
 
         sqlx::query!(
             r#"

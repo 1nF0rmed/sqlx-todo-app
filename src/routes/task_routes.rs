@@ -1,4 +1,4 @@
-use actix_web::{web::{self, Data}, HttpResponse};
+use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -94,34 +94,41 @@ pub async fn complete_task(
     }
 }
 
-// #[cfg(test)]
-// mod tests {
+#[cfg(test)]
+mod tests {
 
-//     use super::*;
-//     use actix_web::{test, web, App};
-//     use diesel::{query_dsl::methods::FilterDsl};
+    use std::env;
 
-//     #[actix_rt::test]
-//     async fn test_should_create_task() {
-//         let data = TaskRequest {
-//             title: "Adding a new PR".to_string(),
-//             description: "Update base repo to implement serde ro parse data".to_string(),
-//         };
-//         let mut app =
-//             test::init_service(App::new().route("/tasks/create", web::post().to(create_task)))
-//                 .await;
-//         let req = test::TestRequest::post()
-//             .uri("/tasks/create")
-//             .set_json(data)
-//             .to_request();
-//         let resp: StatusMessage = test::call_and_read_body_json(&mut app, req).await;
+    use super::*;
+    use actix_web::{test, web, App};
 
-//         assert_eq!(resp.status, "ok".to_string());
+    #[actix_rt::test]
+    async fn test_should_create_task() {
+        let pool = PgPool::connect(&env::var("DATABASE_URL").expect("Should get DATABASE_URL")).await.expect("Should connect to database");
 
-//         use diesel::prelude::*;
-//         use crate::schema::tasks::dsl::*;
-//         diesel::delete(FilterDsl::filter(tasks, id.eq(resp.data[0].id.to_string())))
-//             .execute(&establish_connection())
-//             .expect("Couldn't teardown for test");
-//     }
-// }
+        let data = TaskRequest {
+            title: "Adding a new PR".to_string(),
+            description: "Update base repo to implement serde ro parse data".to_string(),
+        };
+        let mut app =
+            test::init_service(App::new().data(pool.clone()).route("/tasks/create", web::post().to(create_task)))
+                .await;
+        let req = test::TestRequest::post()
+            .uri("/tasks/create")
+            .set_json(data)
+            .to_request();
+        let resp: StatusMessage = test::call_and_read_body_json(&mut app, req).await;
+
+        assert_eq!(resp.status, "ok".to_string());
+
+        let mut tx = pool.begin().await.expect("Should connect");
+        sqlx::query!(r#"
+        DELETE FROM tasks
+        WHERE id = $1
+        "#,
+        resp.data[0].id.to_string()
+        ).execute(&mut tx)
+        .await
+        .expect("Should have deleted the added task");
+    }
+}
